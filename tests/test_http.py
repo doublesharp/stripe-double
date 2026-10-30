@@ -304,6 +304,33 @@ class HttpTests(unittest.TestCase):
         self.assertEqual(self.request("POST","/__simulator/v1/runs",{"scenario_id":"STRIPE-LOCAL-01"},token=old_admin,json_body=True)[0],403)
         self.assertEqual(self.exchange(self.session(account)["client_secret"],account)[0],200)
 
+    def test_connect_initialize_resolves_account_from_single_use_secret(self):
+        def initialize(secret, purpose="onboarding", run=None):
+            return self.request("POST","/__simulator/v1/components/initialize",
+                {"client_secret":secret,"purpose":purpose},json_body=True,run=run)
+        account=self.account()
+        secret=self.session(account)["client_secret"]
+        self.assertEqual(initialize(secret,"payout_settings")[0],403)
+        self.assertEqual(initialize(secret,"card_payment")[0],400)
+        other_run=self.store.create_run("STRIPE-LOCAL-02")["simulation_run_id"]
+        self.assertEqual(initialize(secret,run=other_run)[0],403)
+        self.assertEqual(self.request("POST","/__simulator/v1/components/initialize",
+            {"client_secret":secret,"purpose":"onboarding","account":account},json_body=True)[0],400)
+        status,cap,head=initialize(secret)
+        self.assertEqual(status,200,cap)
+        self.assertEqual(set(cap),{"control_capability","purpose","account","expires_at_ms","provider_version"})
+        self.assertEqual((cap["account"],cap["purpose"]),(account,"onboarding"))
+        self.assertEqual(head["Content-Type"],"application/json")
+        self.assertEqual(head["X-Local-Simulator-Run"],self.run)
+        self.assertEqual(initialize(secret)[0],403)
+        self.assertEqual(self.exchange(secret,account)[0],403)
+        status,result,_=self.component(cap["control_capability"],account,"onboarding","requirements_complete",cap["provider_version"])
+        self.assertEqual(status,200,result)
+        expired=self.session(account)["client_secret"]
+        self.clock.advance(301)
+        self.assertEqual(initialize(expired)[0],403)
+        self.assertEqual(initialize("acs_LocalSim_secret_"+"x"*43)[0],403)
+
     def test_reset_invalidates_controls_retains_original_resources(self):
         account=self.account()
         status,cap,_=self.exchange(self.session(account)["client_secret"],account)

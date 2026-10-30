@@ -61,6 +61,18 @@ class CapabilityStore:
             self._controls[control] = lease
             return control, lease
 
+    def initialize(self, token, run, purpose):
+        """Connect embedded components send no account; resolve it only from the secret's own lease."""
+        need(purpose in PURPOSES and purpose != "card_payment")
+        with self._lock:
+            self._purge()
+            need(isinstance(token, str) and 0 < len(token) <= 512, 403, "simulator_capability")
+            lease = self._secrets.get(token)
+            need(lease is not None, 403, "simulator_capability")
+            # exchange rechecks run, purpose and expiry under the same lock and
+            # consumes the very same single-use secret as the account-explicit route.
+            return self.exchange(token, run, lease.account, purpose)
+
     def consume(self, token, run, account, purpose, retire=False):
         with self._lock:
             self._purge()

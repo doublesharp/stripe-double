@@ -484,6 +484,13 @@ class SimulatorServer:
                     self.capabilities.expire_run(run)
                     self.hosted.expire_run(run)
             return Result(200,self._run_public(row))
+        if path == "/__simulator/v1/components/initialize":
+            wire.closed(body,{"client_secret","purpose"})
+            need(body["purpose"] in wire.PURPOSES and body["purpose"] != "card_payment")
+            token, lease = self.capabilities.initialize(body["client_secret"],run,body["purpose"])
+            current = self.store.object(run,"account",lease.resource,lease.account)
+            return Result(200,{"control_capability":token,"purpose":lease.purpose,"account":lease.account,
+                               "expires_at_ms":int(lease.expires*1000),"provider_version":current["version"]})
         if path == "/__simulator/v1/components/exchange":
             wire.closed(body,{"client_secret","account","purpose"})
             need(body["purpose"] in wire.PURPOSES)
